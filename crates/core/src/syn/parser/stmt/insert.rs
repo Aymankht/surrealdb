@@ -1,7 +1,7 @@
 use reblessive::Stk;
 
 use crate::{
-	sql::{statements::InsertStatement, Data, Idiom, Subquery, Value},
+	sql::{statements::InsertStatement, Array, Data, Idiom, Subquery, Value},
 	syn::{
 		error::bail,
 		parser::{mac::expected, ParseResult, Parser},
@@ -163,18 +163,19 @@ impl Parser<'_> {
 		expected!(self, t!("DUPLICATE"));
 		expected!(self, t!("KEY"));
 		expected!(self, t!("UPDATE"));
-		let l = self.parse_plain_idiom(ctx).await?;
-		let o = self.parse_assigner()?;
-		let r = ctx.run(|ctx| self.parse_value_field(ctx)).await?;
-		let mut data = vec![(l, o, r)];
 
+		//first update field: required cant be empty
+		let assignment = self.parse_value_field(ctx).await?;
+
+		let mut updates = Array::new();
+		updates.push(assignment);
+
+		//next update fields
 		while self.eat(t!(",")) {
-			let l = self.parse_plain_idiom(ctx).await?;
-			let o = self.parse_assigner()?;
-			let r = ctx.run(|ctx| self.parse_value_field(ctx)).await?;
-			data.push((l, o, r))
+			let assignment = self.parse_value_field(ctx).await?;
+			updates.push(assignment);
 		}
 
-		Ok(Data::UpdateExpression(data))
+		return Ok(Data::UpdateExpression(Value::Array(updates)));
 	}
 }

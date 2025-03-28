@@ -26,7 +26,7 @@ pub enum Data {
 	ContentExpression(Value),
 	SingleExpression(Value),
 	ValuesExpression(Vec<Vec<(Idiom, Value)>>),
-	UpdateExpression(Vec<(Idiom, Operator, Value)>),
+	UpdateExpression(Value),
 }
 
 impl Default for Data {
@@ -114,13 +114,7 @@ impl Display for Data {
 					Fmt::comma_separated(v.iter().map(|(_, v)| v))
 				))))
 			),
-			Self::UpdateExpression(v) => write!(
-				f,
-				"ON DUPLICATE KEY UPDATE {}",
-				Fmt::comma_separated(
-					v.iter().map(|args| Fmt::new(args, |(l, o, r), f| write!(f, "{l} {o} {r}",)))
-				)
-			),
+			Self::UpdateExpression(v) => write!(f, "ON DUPLICATE KEY UPDATE {v}"),
 		}
 	}
 }
