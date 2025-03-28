@@ -52,6 +52,7 @@ impl From<Value> for serde_json::Value {
 			Value::Subquery(subquery) => json!(subquery),
 			Value::Expression(expression) => json!(expression),
 			Value::Closure(closure) => json!(closure),
+			Value::Assignment(assignment) => json!(assignment),
 			Value::Refs(_) => json!(sql::Array::new()),
 		}
 	}
