@@ -1,15 +1,12 @@
-use crate::ctx::Context;
-use crate::dbs::Options;
-use crate::doc::CursorDoc;
 use crate::err::Error;
+use crate::sql::array::Array;
 use crate::sql::idiom::Idiom;
+use crate::sql::object::Object;
 use crate::sql::operator::Operator;
 use crate::sql::value::Value;
-use reblessive::tree::Stk;
 use revision::revisioned;
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use std::str;
 
 pub(crate) const TOKEN: &str = "$surrealdb::private::sql::Assignment";
 
@@ -25,7 +22,7 @@ pub struct Assignment {
 }
 
 impl From<(Idiom, Operator, Value)> for Assignment {
-	fn from(tuple: (Idiom, Operator, Value)) -> Self {
+	fn from(tuple: (Idiom, Operator, Value)) -> Assignment {
 		Assignment {
 			l: tuple.0,
 			o: tuple.1,
@@ -34,22 +31,77 @@ impl From<(Idiom, Operator, Value)> for Assignment {
 	}
 }
 
-impl Assignment {
-	pub(crate) async fn compute(
-		&self,
-		stk: &mut Stk,
-		ctx: &Context,
-		opt: &Options,
-		doc: Option<&CursorDoc>,
-	) -> Result<Value, Error> {
-		Ok(Value::from(Assignment::from((
-			self.l.clone(),
-			self.o.clone(),
-			match self.r.compute(stk, ctx, opt, doc).await {
-				Ok(v) => v,
+impl TryFrom<(Value, Value, Value)> for Assignment {
+	type Error = Error;
+
+	fn try_from(tuple: (Value, Value, Value)) -> Result<Self, Self::Error> {
+		let idiom = tuple.1.to_idiom();
+		let operator = match tuple.1 {
+			Value::Strand(o) => match o.as_str() {
+				"=" => Operator::Equal,
+				"+=" => Operator::Inc,
+				"-=" => Operator::Dec,
+				"+?=" => Operator::Ext,
+				_ => return Err(Error::InvalidOperator(o.to_string())),
+			},
+			o => return Err(Error::TryFrom(o.to_string(), "Assignment")),
+		};
+
+		Ok(Assignment {
+			l: idiom,
+			o: operator,
+			r: tuple.2,
+		})
+	}
+}
+
+impl TryFrom<Array> for Assignment {
+	type Error = Error;
+
+	fn try_from(a: Array) -> Result<Self, Self::Error> {
+		if a.len() != 3 {
+			return Err(Error::TryFrom(a.to_string(), "Assignment"));
+		}
+		match Assignment::try_from((a[0].clone(), a[1].clone(), a[2].clone())) {
+			Ok(assignment) => Ok(assignment),
+			Err(e) => return Err(e),
+		}
+	}
+}
+
+impl TryFrom<Object> for Assignment {
+	type Error = Error;
+
+	fn try_from(a: Object) -> Result<Self, Self::Error> {
+		if !(a.contains_key("l") && a.contains_key("o") && a.contains_key("r")) {
+			return Err(Error::TryFrom(a.to_string(), "Assignment"));
+		}
+		match Assignment::try_from((
+			a.get("l").cloned().ok_or_else(|| Error::TryFrom("l".to_string(), "Assignment"))?,
+			a.get("o").cloned().ok_or_else(|| Error::TryFrom("o".to_string(), "Assignment"))?,
+			a.get("r").cloned().ok_or_else(|| Error::TryFrom("r".to_string(), "Assignment"))?,
+		)) {
+			Ok(assignment) => Ok(assignment),
+			Err(e) => return Err(e),
+		}
+	}
+}
+
+impl TryFrom<Value> for Assignment {
+	type Error = Error;
+
+	fn try_from(value: Value) -> Result<Self, Self::Error> {
+		match value {
+			Value::Object(o) => match Assignment::try_from(o) {
+				Ok(assignment) => Ok(assignment),
 				Err(e) => return Err(e),
 			},
-		))))
+			Value::Array(a) => match Assignment::try_from(a) {
+				Ok(assignment) => Ok(assignment),
+				Err(e) => return Err(e),
+			},
+			_ => return Err(Error::TryFrom(value.to_string(), "Assignment")),
+		}
 	}
 }
 
