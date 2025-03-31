@@ -44,7 +44,7 @@ impl TryFrom<(Value, Value, Value)> for Assignment {
 				"+?=" => Operator::Ext,
 				_ => return Err(Error::InvalidOperator(o.to_string())),
 			},
-			o => return Err(Error::TryFrom(o.to_string(), "Assignment")),
+			o => return Err(Error::try_from(o.to_string())),
 		};
 
 		Ok(Assignment {

@@ -18,7 +18,7 @@ use crate::{
 			CreateStatement, DeleteStatement, InsertStatement, KillStatement, LiveStatement,
 			RelateStatement, SelectStatement, UpdateStatement, UpsertStatement,
 		},
-		Array, Fields, Function, Model, Output, Query, Strand, Value,
+		Array, Assignment, Fields, Function, Idiom, Model, Operator, Output, Query, Strand, Value,
 	},
 };
 
@@ -419,9 +419,29 @@ pub trait RpcProtocolV2: RpcContext {
 			return Err(RpcError::MethodNotAllowed);
 		}
 		// Process the method arguments
-		let Ok((what, data)) = params.needs_two() else {
+		let Ok((what, data, update)) = params.needs_two_or_three() else {
 			return Err(RpcError::InvalidParams);
 		};
+
+		let update = match update {
+			Value::Object(v) => {
+				let mut result = Array::new();
+
+				for (key, value) in v.iter() {
+					let assignment = Value::from(Assignment::from((
+						Idiom::from(key.clone()),
+						Operator::Equal,
+						value.clone(),
+					)));
+					result.push(assignment);
+				}
+				Value::Array(result)
+			}
+			Value::None => Value::None,
+			Value::Null => Value::Null,
+			_ => return Err(RpcError::InvalidParams),
+		};
+
 		// Specify the SQL query string
 		let sql = InsertStatement {
 			into: match what.is_none_or_null() {
@@ -429,10 +449,15 @@ pub trait RpcProtocolV2: RpcContext {
 				true => None,
 			},
 			data: crate::sql::Data::SingleExpression(data),
+			update: match update.is_none_or_null() {
+				false => Some(crate::sql::Data::UpdateExpression(update)),
+				true => None,
+			},
 			output: Some(Output::After),
 			..Default::default()
 		}
 		.into();
+
 		// Specify the query parameters
 		let var = Some(self.session().parameters.clone());
 		// Execute the query on the database
